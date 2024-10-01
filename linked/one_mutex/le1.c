@@ -1,0 +1,194 @@
+#include <stdio.h>      // Para funciones de entrada/salida
+#include <stdlib.h>     // Para funciones de manejo de memoria
+#include <pthread.h>    // Para funciones de manejo de hilos y mutex
+
+// Definición de la estructura para los nodos de una lista enlazada
+struct list_node_s {
+    int data;
+    struct list_node_s* next;
+    pthread_mutex_t mutex;  // Mutex para sincronización
+};
+
+// Declaración de la variable global head_p
+struct list_node_s* head_p = NULL;
+
+int Delete(int value, struct list_node_s** head_p);
+int Member(int value);
+int Insert(int value);
+
+// Función para eliminar un nodo
+
+int Delete(int value, struct list_node_s** head_p) {
+    struct list_node_s* curr_p = *head_p;
+    struct list_node_s* pred_p = NULL;
+
+    // Lock the mutex of the head node if the list is not empty
+    if (curr_p != NULL)
+        pthread_mutex_lock(&(curr_p->mutex));
+
+    while (curr_p != NULL && curr_p->data < value) {
+        // Check if the next node exists and lock its mutex
+        if (curr_p->next != NULL)
+            pthread_mutex_lock(&(curr_p->next->mutex)); 
+
+        // Unlock the previous node's mutex if it exists
+        if (pred_p != NULL)
+            pthread_mutex_unlock(&(pred_p->mutex));
+
+        // Move to the next node
+        pred_p = curr_p; 
+        curr_p = curr_p->next; 
+    }
+
+    // If the current node's data matches the value to delete
+    if (curr_p != NULL && curr_p->data == value) {
+        if (pred_p == NULL) { // Deleting the first node
+            *head_p = curr_p->next; // Update head pointer
+        } else {
+            pred_p->next = curr_p->next; // Bypass the current node
+        }
+        pthread_mutex_unlock(&(curr_p->mutex)); // Unlock the mutex of the current node
+        free(curr_p); // Free the memory of the deleted node
+        return 1; // Successful deletion
+    }
+
+    // Unlock remaining mutexes
+    if (curr_p != NULL)
+        pthread_mutex_unlock(&(curr_p->mutex)); // Unlock the current node if it's not NULL
+    if (pred_p != NULL)
+        pthread_mutex_unlock(&(pred_p->mutex)); // Unlock the previous node if it exists
+
+    return 0; // Value not found in the list
+}
+
+
+
+// Función para verificar si un elemento es miembro de la lista
+
+
+
+int Member(int value) {
+    struct list_node_s* temp_p;
+
+    // Verificar si head_p no es NULL antes de bloquear
+    if (head_p == NULL)
+        return 0;
+    
+    pthread_mutex_lock(&(head_p->mutex)); // Bloquear el mutex del nodo cabeza
+    temp_p = head_p;
+    
+
+    while (temp_p != NULL && temp_p->data < value) {
+        printf("val: %i\n",temp_p->data);
+        if (temp_p->next != NULL)
+            pthread_mutex_lock(&(temp_p->next->mutex)); // Bloquear el mutex del siguiente nodo
+
+        pthread_mutex_unlock(&(temp_p->mutex)); // Desbloquear el mutex del nodo actual
+        temp_p = temp_p->next;
+
+    }
+
+    if (temp_p == NULL || temp_p->data > value) {
+        if (temp_p != NULL)
+            pthread_mutex_unlock(&(temp_p->mutex)); // Desbloquear el mutex si no es NULL
+        return 0; // No encontrado
+    } else {
+        pthread_mutex_unlock(&(temp_p->mutex)); // Desbloquear el mutex si se encontró
+        return 1; // Encontrado
+    }
+}
+
+
+
+// Función para insertar un nodo
+int Insert(int value) {
+    struct list_node_s* curr_p = head_p;
+    struct list_node_s* pred_p = NULL;
+    struct list_node_s* temp_p;
+
+    if (head_p != NULL)
+        pthread_mutex_lock(&(head_p->mutex)); // Bloquear el mutex de la cabeza
+
+    while (curr_p != NULL && curr_p->data < value) {
+        pred_p = curr_p;
+        curr_p = curr_p->next;
+
+        if (curr_p != NULL)
+            pthread_mutex_lock(&(curr_p->mutex)); // Bloquear el siguiente nodo
+        
+        pthread_mutex_unlock(&(pred_p->mutex)); // Desbloquear el nodo previo
+    }
+
+    // Crear un nuevo nodo
+    temp_p = (struct list_node_s*)malloc(sizeof(struct list_node_s));
+    if (temp_p == NULL) {
+        fprintf(stderr, "Error de asignación de memoria\n");
+        if (head_p != NULL)
+            pthread_mutex_unlock(&(head_p->mutex));
+        return -1;
+    }
+    temp_p->data = value;
+    temp_p->next = curr_p;
+    pthread_mutex_init(&(temp_p->mutex), NULL); // Inicializar el mutex correctamente
+
+    // Ajustar los enlaces
+    if (pred_p == NULL) { // Insertar al inicio de la lista
+        head_p = temp_p;
+    } else {
+        pred_p->next = temp_p;
+        pthread_mutex_unlock(&(pred_p->mutex)); // Desbloquear pred_p después de insertar
+    }
+
+    // Desbloquear el nodo actual si no es NULL
+    if (curr_p != NULL)
+        pthread_mutex_unlock(&(curr_p->mutex));
+
+    return 1; 
+}
+
+void PrintList(struct list_node_s* head_p) {
+    struct list_node_s* temp_p = head_p;
+
+    // Traverse the list
+    while (temp_p != NULL) {
+        printf("%d -> ", temp_p->data);  // Print the data of the current node
+        temp_p = temp_p->next;           // Move to the next node
+    }
+    printf("NULL\n");  // Indicate the end of the list
+}
+
+
+
+int main() {
+    // Inicialización del nodo cabeza
+    head_p = NULL;
+
+    // Ejemplo de inserción de nodos
+    printf("Insertando 10: %d\n", Insert(10));
+    printf("Insertando 20: %d\n", Insert(20));
+    printf("Insertando 15: %d\n", Insert(15));
+    printf("Insertando 5: %d\n", Insert(5));
+    PrintList(head_p);
+
+    // Verificando si los elementos están en la lista
+    printf("¿Está 15 en la lista? %d\n", Member(15));
+    printf("¿Está 25 en la lista? %d\n", Member(25));
+
+    // Eliminando un nodo
+    printf("Eliminando 20: %d\n", Delete(20, &head_p));
+    PrintList(head_p);
+
+    // Verificando de nuevo si el elemento ha sido eliminado
+    printf("¿Está 15 en la lista después de la eliminación? %d\n", Member(20));
+
+    // Limpiar la memoria de la lista enlazada antes de salir
+    struct list_node_s* current = head_p;
+    struct list_node_s* next;
+    while (current != NULL) {
+        next = current->next;
+        free(current);
+        current = next;
+    }
+
+    return 0;
+}
